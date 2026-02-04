@@ -1,33 +1,25 @@
-/**
- * @file app.js - Main entry point for the Express application.
- * Handles authentication, sessions, and database connection.
- */
-
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const flash = require('connect-flash');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
 
 const r1 = require('./routes/r1');
 const User = require('./models/user');
 const app = express();
 
-/**
- * Establish connection to the MongoDB database.
- */
 mongoose.connect('mongodb://localhost:27017/testdb').then(() => {
     console.log('Connected to MongoDB');
 }).catch((err) => {
     console.error('Error connecting to MongoDB', err);
 });
 
-// View Engine Setup
 app.set('view engine', 'ejs');
 app.set('views', './views');
-
-// Middleware
 app.use(flash());
+
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
     secret: 'yourSecretKey',
@@ -35,13 +27,19 @@ app.use(session({
     saveUninitialized: true
 }));
 
-/**
- * Middleware to protect routes. 
- * Checks if a user session exists; otherwise, redirects to login with a flash message.
- * * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
+const swaggerOptions = {
+    definition: {
+        openapi: '3.0.0',
+        info: {
+            title: 'Express Auth API',
+            version: '1.0.0',
+            description: 'Auto-generated documentation for Login/Register API',
+        },
+        servers: [{ url: 'http://localhost:3001' }],
+    },
+    apis: ['./index.js'],
+};
+
 const requireLogin = (req, res, next) => {
     if (!req.session.user_id) {
         req.flash('error', 'You must be logged in to view this page.');
@@ -50,93 +48,114 @@ const requireLogin = (req, res, next) => {
     next();
 };
 
-// Route Groups
-app.use('/verySecret', requireLogin, r1);
+const specs = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 /**
- * GET /
- * Renders the homepage.
+ * @swagger
+ * /verySecret:
+ *   get:
+ *     summary: Access the secret page (requires login)
+ *     responses:
+ *       200:
+ *         description: Secret page rendered
+ *       302:
+ *         description: Redirect to /login if not authenticated
+ */
+
+app.use('/verySecret', requireLogin, r1);
+
+app.use('/login', require('./routes/login'));
+app.use('/register', require('./routes/register'));
+
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Returns the homepage
+ *     responses:
+ *       200:
+ *         description: Success
  */
 app.get('/', (req, res) => {
     res.send('this is homepage');
 });
 
 /**
- * GET /login
- * Displays the login form.
+ * @swagger
+ * /login:
+ *   get:
+ *     summary: Render the login page
+ *     responses:
+ *       200:
+ *         description: Login page rendered
+ *   post:
+ *     summary: Authenticate user and start session
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       302:
+ *         description: Redirect to /verySecret on success
+ *       200:
+ *         description: Invalid credentials
  */
-app.get('/login', (req, res) => {
-    res.render('login');
-});
 
 /**
- * POST /login
- * Authenticates user credentials and creates a session.
+ * @swagger
+ * /register:
+ *   get:
+ *     summary: Render the registration page
+ *     responses:
+ *       200:
+ *         description: Registration page rendered
+ *   post:
+ *     summary: Create a new user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       302:
+ *         description: Redirect to /verySecret after registration
  */
-app.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-    const user = await User.findOne({ username });
-    if (user) {
-        const match = await bcrypt.compare(password, user.password);
-        if (match) {
-            req.session.user_id = user._id;
-            res.redirect('/verySecret');
-        } else {
-            res.send('Invalid password');
-        }
-    } else {
-        res.send('User not found');
-    }
-});
 
 /**
- * GET /register
- * Displays the registration form.
+ * @swagger
+ * /verySecret:
+ *   get:
+ *     summary: Access the secret page (requires login)
+ *     responses:
+ *       200:
+ *         description: Secret page rendered
+ *       302:
+ *         description: Redirect to /login if not authenticated
  */
-app.get('/register', (req, res) => {
-    res.render('regester');
-});
 
-/**
- * POST /register
- * Hashes password, saves new user to MongoDB, and logs them in.
- */
-app.post('/register', async (req, res) => {
-    const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = new User({ username, password: hashedPassword });
-
-    await newUser.save().then(() => {
-        console.log('User registered successfully');
-    }).catch((err) => {
-        console.error('Error registering user', err);
-    });
-
-    req.session.user_id = newUser._id;
-    res.redirect('/verySecret');
-});
-
-/**
- * GET /secret
- * A protected route accessible only to logged-in users.
- */
 app.get('/secret', requireLogin, (req, res) => {
     res.send('This is a secret route!', req.body);
 });
 
-/**
- * POST /logout
- * Ends the user session and redirects to the login page.
- */
 app.post('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login');
 });
 
-/**
- * Start the server on port 3001.
- */
 app.listen(3001, () => {
     console.log('Server is running on port 3001');
 });

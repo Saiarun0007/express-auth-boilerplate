@@ -45,13 +45,13 @@ const requireLogin = (req, res, next) => {
 
 app.use('/verySecret', requireLogin, r1);
 
+app.use('/login', require('./routes/login'));
+
 app.get('/', (req, res) => {
     res.send('this is homepage');
 });
 
-app.get('/login', (req, res) => {
-    res.render('login');
-});
+
 
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
